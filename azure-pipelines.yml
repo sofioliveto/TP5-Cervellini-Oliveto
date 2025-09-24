@@ -1,0 +1,155 @@
+# TP04 - Azure DevOps Pipeline - Aplicación Palabras
+# Pipeline CI multi-stage para Frontend (Node.js) + Backend (Node.js/Express/SQLite)
+
+trigger:
+- main
+
+# Configuración del pool Self-Hosted
+pool:
+  name: 'PalabrasPOOL'
+  demands:
+  - agent.name -equals Agent-Local
+
+variables:
+  # Variables globales
+  buildConfiguration: 'Release'
+  frontendPath: 'front'
+  backendPath: 'back'
+  
+# Multi-Stage Pipeline
+stages:
+
+# ============================================================================
+# STAGE 1: CI - Continuous Integration
+# ============================================================================
+- stage: CI
+  displayName: 'Continuous Integration'
+  jobs:
+  
+  # Job 1: Build Frontend
+  - job: BuildFrontend
+    displayName: 'Build Frontend'
+    steps:
+    
+    - task: NodeTool@0
+      displayName: 'Install Node.js'
+      inputs:
+        versionSpec: '18.x'
+    
+    - script: |
+        echo "=== FRONTEND BUILD STARTED ==="
+        echo "Working directory: $(System.DefaultWorkingDirectory)/$(frontendPath)"
+        ls -la $(frontendPath)
+      displayName: 'Frontend - Show Info'
+      
+    - script: |
+        cd $(frontendPath)
+        npm ci
+      displayName: 'Frontend - Install Dependencies'
+      
+    - script: |
+        cd $(frontendPath)
+        npm run build
+      displayName: 'Frontend - Build'
+      
+    - script: |
+        cd $(frontendPath)
+        npm run test
+      displayName: 'Frontend - Run Tests'
+      continueOnError: true
+      
+    - task: CopyFiles@2
+      displayName: 'Frontend - Copy Files to Staging'
+      inputs:
+        SourceFolder: '$(frontendPath)'
+        Contents: |
+          **/*.js
+          **/*.html
+          **/*.css
+          package.json
+        TargetFolder: '$(Build.ArtifactStagingDirectory)/frontend'
+        
+    - task: PublishBuildArtifacts@1
+      displayName: 'Frontend - Publish Artifacts'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/frontend'
+        ArtifactName: 'frontend-artifact'
+        publishLocation: 'Container'
+
+  # Job 2: Build Backend  
+  - job: BuildBackend
+    displayName: 'Build Backend'
+    steps:
+    
+    - task: NodeTool@0
+      displayName: 'Install Node.js'
+      inputs:
+        versionSpec: '18.x'
+        
+    - script: |
+        echo "=== BACKEND BUILD STARTED ==="
+        echo "Working directory: $(System.DefaultWorkingDirectory)/$(backendPath)"
+        ls -la $(backendPath)
+      displayName: 'Backend - Show Info'
+      
+    - script: |
+        cd $(backendPath)
+        npm ci
+      displayName: 'Backend - Install Dependencies'
+      
+    - script: |
+        cd $(backendPath)
+        npm run build
+      displayName: 'Backend - Build'
+      
+    - script: |
+        cd $(backendPath)
+        npm run test
+      displayName: 'Backend - Run Tests'  
+      continueOnError: true
+      
+    - task: CopyFiles@2
+      displayName: 'Backend - Copy Files to Staging'
+      inputs:
+        SourceFolder: '$(backendPath)'
+        Contents: |
+          **/*.js
+          package.json
+          !node_modules/**
+        TargetFolder: '$(Build.ArtifactStagingDirectory)/backend'
+        
+    - task: PublishBuildArtifacts@1
+      displayName: 'Backend - Publish Artifacts'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/backend'
+        ArtifactName: 'backend-artifact'
+        publishLocation: 'Container'
+
+  # Job 3: Build Summary
+  - job: BuildSummary
+    displayName: 'Build Summary'
+    dependsOn: 
+    - BuildFrontend
+    - BuildBackend
+    condition: always()
+    steps:
+    
+    - script: |
+        echo "============================================"
+        echo "         BUILD SUMMARY - TP04"
+        echo "============================================"
+        echo "Pipeline: $(Build.DefinitionName)"
+        echo "Build ID: $(Build.BuildId)"
+        echo "Build Number: $(Build.BuildNumber)"
+        echo "Source Branch: $(Build.SourceBranchName)"
+        echo "Agent: $(Agent.Name)"
+        echo "Pool: $(Agent.PoolName)"
+        echo "============================================"
+        echo "Frontend Build: ${{ dependencies.BuildFrontend.result }}"
+        echo "Backend Build: ${{ dependencies.BuildBackend.result }}"
+        echo "============================================"
+        echo "Artifacts Published:"
+        echo "- frontend-artifact"
+        echo "- backend-artifact"
+        echo "============================================"
+      displayName: 'Show Build Summary'
