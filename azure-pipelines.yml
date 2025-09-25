@@ -1,4 +1,6 @@
-# TP04 - Pipeline Simple que SÍ funciona
+# TP04 - Azure DevOps Pipeline CI - Aplicación de Palabras (Frontend + Backend)
+# Ejecuta en un agente Self-Hosted, construye ambos módulos y publica artefactos
+
 trigger:
   - main
 
@@ -8,88 +10,54 @@ pool:
     - agent.name -equals PalabrasAGENT
 
 stages:
-- stage: CI
-  displayName: 'Continuous Integration'
-  jobs:
+  - stage: CI
+    displayName: 'Continuous Integration'
+    jobs:
+      - job: BuildApp
+        displayName: 'Build Frontend + Backend'
+        steps:
 
-  - job: BuildApp
-    displayName: 'Build Complete App'
-    steps:
+          #Instalar Node.js
+          - task: NodeTool@0
+            displayName: 'Install Node.js 18.x'
+            inputs:
+              versionSpec: '18.x'
 
-    - task: NodeTool@0
-      displayName: 'Install Node.js'
-      inputs:
-        versionSpec: '18.x'
+          #======== Build del Frontend ========
+          - script: |
+              echo "=== BUILDING FRONTEND ==="
+              dir frontend
+              cd frontend
+              npm install
+              echo "Frontend dependencies installed"
+              npm run build
+              echo "Frontend build completed"
+            displayName: 'Frontend Build'
 
-    # Build Frontend
-    - script: |
-        echo "=== BUILDING FRONTEND ==="
-        dir front
-        cd front
-        npm install
-        echo "Frontend dependencies installed"
-        npm run build
-        echo "Frontend build completed"
-      displayName: 'Build Frontend'
+          #======== Build del Backend ========
+          - script: |
+              echo "=== BUILDING BACKEND ==="
+              dir backend
+              cd backend
+              npm install
+              echo "Backend dependencies installed"
+              npm run build
+              echo "Backend build completed"
+            displayName: 'Backend Build'
 
-    # Build Backend  
-    - script: |
-        echo "=== BUILDING BACKEND ==="
-        dir back
-        cd back
-        npm install
-        echo "Backend dependencies installed"
-        npm run build
-        echo "Backend build completed"
-      displayName: 'Build Backend'
+          #Copiar archivos (excepto node_modules)
+          - task: CopyFiles@2
+            displayName: 'Copy Frontend + Backend files (excluding node_modules)'
+            inputs:
+              Contents: |
+                frontend/**
+                backend/**
+                !**/node_modules/**
+              TargetFolder: '$(Build.ArtifactStagingDirectory)'
 
-    # Debug: Ver qué archivos tenemos
-    - script: |
-        echo "=== CHECKING FILES FOR ARTIFACTS ==="
-        echo "Current directory:"
-        dir
-        echo "Frontend files:"
-        dir front
-        echo "Backend files:"
-        dir back
-      displayName: 'Debug - Check Files'
-
-    # Copy Frontend Files
-    - task: CopyFiles@2
-      displayName: 'Copy Frontend Files'
-      inputs:
-        SourceFolder: 'front'
-        Contents: '**'
-        TargetFolder: '$(Build.ArtifactStagingDirectory)/frontend'
-
-    # Copy Backend Files
-    - task: CopyFiles@2
-      displayName: 'Copy Backend Files'
-      inputs:
-        SourceFolder: 'back'
-        Contents: '**'
-        TargetFolder: '$(Build.ArtifactStagingDirectory)/backend'
-
-    # Debug: Ver qué se copió
-    - script: |
-        echo "=== CHECKING STAGING DIRECTORY ==="
-        dir "$(Build.ArtifactStagingDirectory)"
-        echo "Frontend artifacts:"
-        dir "$(Build.ArtifactStagingDirectory)\frontend"
-        echo "Backend artifacts:"
-        dir "$(Build.ArtifactStagingDirectory)\backend"
-      displayName: 'Debug - Check Staging'
-
-    # Publish Frontend Artifacts
-    - task: PublishBuildArtifacts@1
-      displayName: 'Publish Frontend Artifacts'
-      inputs:
-        PathtoPublish: '$(Build.ArtifactStagingDirectory)/frontend'
-        ArtifactName: 'frontend-artifact'
-
-    # Publish Backend Artifacts  
-    - task: PublishBuildArtifacts@1
-      displayName: 'Publish Backend Artifacts'
-      inputs:
-        PathtoPublish: '$(Build.ArtifactStagingDirectory)/backend'
-        ArtifactName: 'backend-artifact'
+          #======== Publicar artefactos ========
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Combined App Artifacts'
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+              ArtifactName: 'app-complete'
