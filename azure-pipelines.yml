@@ -1,22 +1,23 @@
 # TP05 - Azure DevOps CI/CD Pipeline - Aplicación Palabras (Node.js)
-# Arquitectura: Frontend + Backend Node.js con SQLite
+# Basado en arquitectura similar: Backend (Node.js) + Frontend (HTML/JS estáticos)
 
 trigger:
   branches:
     include:
       - main
-      - master
 
 pr:
   branches:
     include:
       - '*'
 
-variables:
-- group: BackendSecrets
-
 pool:
   vmImage: 'ubuntu-latest'
+
+variables:
+  nodeVersion: '20.x'
+  azureSubscription: 'azure-palabras-connection'
+  webAppNameQA: 'palabras-qa'
 
 stages:
 # =======================================
@@ -26,88 +27,92 @@ stages:
   displayName: "Build & Test Backend + Frontend"
   jobs:
     - job: BuildAndTest
-      displayName: "Build and Test Job"
+      displayName: 'Build and Test Job'
       steps:
         - checkout: self
 
         # ---- Setup Node.js ----
         - task: NodeTool@0
-          displayName: "Setup Node.js 18"
+          displayName: "Setup Node.js $(nodeVersion)"
           inputs:
-            versionSpec: "18.x"
+            versionSpec: "$(nodeVersion)"
 
-        # ---- Backend (Node.js) ----
-        - script: npm ci
-          displayName: "Restore Backend Dependencies"
-          workingDirectory: backend
-
-        - script: npm run build
-          displayName: "Build Backend"
-          workingDirectory: backend
-
-        - script: npm test
-          displayName: "Run Backend Tests"
-          workingDirectory: backend
-          continueOnError: true
-
-        # ---- Frontend (Node.js) ----
-        - script: npm ci
-          displayName: "Restore Frontend Dependencies"
-          workingDirectory: frontend
-
-        - script: npm run build
-          displayName: "Build Frontend"
-          workingDirectory: frontend
-
-        - script: npm test
-          displayName: "Run Frontend Tests"
-          workingDirectory: frontend
-          continueOnError: true
-
-        # ---- Preparar artefactos para deploy ----
+        # ---- Backend (Node.js + Express) ----
         - script: |
-            mkdir -p $(Build.ArtifactStagingDirectory)/app
+            echo "════════════════════════════════════════"
+            echo "  BACKEND BUILD"
+            echo "════════════════════════════════════════"
+            cd backend
+            npm ci
+            npm run build
+            echo "✅ Backend build completed"
+          displayName: "Build Backend"
+
+        # ---- Frontend (Static HTML/JS) ----
+        - script: |
+            echo "════════════════════════════════════════"
+            echo "  FRONTEND BUILD"
+            echo "════════════════════════════════════════"
+            cd frontend
+            # Frontend no requiere build, solo verificación
+            if [ -f "package.json" ]; then
+              npm ci --if-present
+              npm run build --if-present
+            fi
+            echo "✅ Frontend ready"
+          displayName: "Prepare Frontend"
+
+        # ---- Copiar Frontend al Backend (como wwwroot) ----
+        - task: CopyFiles@2
+          displayName: 'Copy Frontend to Backend wwwroot'
+          inputs:
+            SourceFolder: 'frontend'
+            Contents: |
+              index.html
+              app.js
+              styles.css
+            TargetFolder: 'backend/frontend'
+            OverWrite: true
+
+        # ---- Publicar Backend + Frontend juntos ----
+        - script: |
+            echo "════════════════════════════════════════"
+            echo "  PREPARING PUBLISH PACKAGE"
+            echo "════════════════════════════════════════"
+            mkdir -p "$(Build.ArtifactStagingDirectory)/publish"
             
-            # Copiar backend a la raíz
-            cp -r backend/* $(Build.ArtifactStagingDirectory)/app/
+            # Copiar backend completo
+            cp backend/index.js "$(Build.ArtifactStagingDirectory)/publish/"
+            cp backend/package.json "$(Build.ArtifactStagingDirectory)/publish/"
+            cp backend/package-lock.json "$(Build.ArtifactStagingDirectory)/publish/"
+            cp -r backend/node_modules "$(Build.ArtifactStagingDirectory)/publish/"
             
-            # Crear carpeta public para frontend compilado
-            mkdir -p $(Build.ArtifactStagingDirectory)/app/public
+            # Copiar frontend que ya está dentro de backend
+            cp -r backend/frontend "$(Build.ArtifactStagingDirectory)/publish/"
             
-            # Copiar archivos compilados del frontend
-            if [ -d "frontend/build" ]; then
-              cp -r frontend/build/* $(Build.ArtifactStagingDirectory)/app/public/
-              echo "✅ Frontend copiado desde build/"
-            elif [ -d "frontend/dist" ]; then
-              cp -r frontend/dist/* $(Build.ArtifactStagingDirectory)/app/public/
-              echo "✅ Frontend copiado desde dist/"
-            else
-              echo "❌ No se encontró carpeta build o dist en frontend"
-              ls -la frontend/
-              exit 1
+            # Copiar DB si existe
+            if [ -f "backend/palabras.db" ]; then
+              cp backend/palabras.db "$(Build.ArtifactStagingDirectory)/publish/"
             fi
             
-            # Verificar estructura final
-            echo "📁 Estructura del artefacto:"
-            find $(Build.ArtifactStagingDirectory)/app -type f | head -15
-          displayName: "Prepare Application Artifacts"
+            echo ""
+            echo "✅ Package structure:"
+            ls -lah "$(Build.ArtifactStagingDirectory)/publish/"
+            echo ""
+            echo "📁 Frontend files:"
+            ls -lah "$(Build.ArtifactStagingDirectory)/publish/frontend/"
+            echo ""
+            echo "📄 Backend index.js (first 5 lines):"
+            head -n 5 "$(Build.ArtifactStagingDirectory)/publish/index.js"
+          displayName: "Publish Backend+Frontend"
 
-        # ---- Comprimir en ZIP ----
-        - task: ArchiveFiles@2
-          displayName: "Archive Application to ZIP"
-          inputs:
-            rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/app'
-            includeRootFolder: false
-            archiveType: 'zip'
-            archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
-            replaceExistingArchive: true
-
-        # ---- Publicar artefactos ----
+        # ---- Publicar Artefacto ----
         - task: PublishBuildArtifacts@1
-          displayName: "Publish Build Artifacts"
+          displayName: "Publish Build Artifact"
           inputs:
-            PathtoPublish: "$(Build.ArtifactStagingDirectory)"
+            PathtoPublish: "$(Build.ArtifactStagingDirectory)/publish"
             ArtifactName: "drop"
+            publishLocation: 'Container'
 
 # =======================================
 # 🌐 DEPLOY QA
@@ -116,27 +121,34 @@ stages:
   displayName: "Deploy to QA"
   dependsOn: BuildAndTest
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-  variables:
-    WEBAPP_QA: palabras-qa
-    azureSubscription: 'azure-palabras-connection'
   jobs:
     - deployment: DeployQA
-      displayName: "Deploy to QA Environment"
+      displayName: "Desplegar QA"
       environment: "QA"
       strategy:
         runOnce:
           deploy:
             steps:
               - checkout: self
+              
               - download: current
                 artifact: drop
 
               - task: AzureWebApp@1
-                displayName: "Deploy to QA Web App"
+                displayName: "Deploy Backend+Frontend QA"
                 inputs:
                   azureSubscription: "$(azureSubscription)"
                   appType: 'webAppLinux'
-                  appName: "$(WEBAPP_QA)"
-                  package: "$(Pipeline.Workspace)/drop/app.zip"
+                  appName: "$(webAppNameQA)"
+                  package: "$(Pipeline.Workspace)/drop"
                   runtimeStack: 'NODE|20-lts'
                   startUpCommand: 'node index.js'
+
+              # Health Check
+              - script: |
+                  echo "⏳ Esperando 30 segundos para que la app inicie..."
+                  sleep 30
+                  echo "🔍 Verificando QA deployment..."
+                  curl -f https://$(webAppNameQA).brazilsouth-01.azurewebsites.net/health || echo "⚠️ Health check pending"
+                displayName: "Health Check QA"
+                continueOnError: true

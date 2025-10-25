@@ -4,7 +4,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const app = express();
 
-// ✅ Puerto dinámico
+// ✅ Puerto dinámico de Azure
 const PORT = process.env.PORT || 3000;
 
 // Middleware
@@ -14,7 +14,7 @@ app.use(express.json());
 // ✅ Servir archivos estáticos del frontend
 app.use(express.static(path.join(__dirname, 'frontend')));
 
-// Inicializar base de datos
+// Base de datos
 const db = new sqlite3.Database('./palabras.db', (err) => {
   if (err) {
     console.error('❌ Error al conectar con la base de datos:', err);
@@ -28,7 +28,7 @@ const db = new sqlite3.Database('./palabras.db', (err) => {
   }
 });
 
-// ✅ API Routes - DEBEN ir ANTES del catch-all
+// ✅ API Routes - ANTES del catch-all
 app.get('/api/palabras', (req, res) => {
   console.log('📥 GET /api/palabras');
   db.all('SELECT * FROM palabras ORDER BY fecha_creacion DESC', (err, rows) => {
@@ -90,11 +90,12 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ✅ Catch-all - DEBE ir al FINAL
+// ✅ Catch-all - AL FINAL
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
 });
 
+// ✅ Listen en 0.0.0.0 para Azure
 app.listen(PORT, '0.0.0.0', () => {
   console.log('════════════════════════════════════════');
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
