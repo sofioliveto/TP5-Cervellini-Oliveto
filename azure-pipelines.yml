@@ -152,7 +152,7 @@ stages:
                 inputs:
                   azureSubscription: "$(azureSubscription)"
                   appName: "$(webAppNameQA)"
-                  resourceGroupName: "rg-palabras-tp05-2025"
+                  resourceGroupName: "palabras-ingsoft3-2025"
                   appSettings: |
                     [
                       { "name": "ENVIRONMENT_NAME", "value": "$(ENVIRONMENT_NAME)" },
@@ -207,7 +207,7 @@ stages:
                 inputs:
                   azureSubscription: "$(azureSubscription)"
                   appName: "$(webAppNamePROD)"  
-                  resourceGroupName: "rg-palabras-tp05-2025"
+                  resourceGroupName: "palabras-ingsoft3-2025"
                   appSettings: |
                     [
                       { "name": "ENVIRONMENT_NAME", "value": "$(ENVIRONMENT_NAME)" },
